@@ -2,7 +2,7 @@
 import java.awt.*;
 import javax.swing.*;
 
-public class GUI {
+public class IscTorrent {
 
     // Componentes principais da interface
     private final JFrame frame;
@@ -15,7 +15,7 @@ public class GUI {
     private JButton downloadButton;
     private JButton connectButton;
 
-    public GUI() {
+    public IscTorrent() {
         frame = new JFrame("Aplicação de Pesquisa ");
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         frame.setSize(600, 300);
@@ -68,8 +68,8 @@ public class GUI {
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {
-            GUI gui = new GUI();
-            gui.open();
+            IscTorrent iscTorrent = new IscTorrent();
+            iscTorrent.open();
         });
     }
 }
