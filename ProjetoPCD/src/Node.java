@@ -68,7 +68,7 @@ public class Node {
         }).start();
     }
 
-    // Handshake --> recebe NewConnectionRequest e responde igual
+    // Handshake --> recebe NewConnectionRequest e responde
     private void handleConnection(Socket socket) {
         new Thread(() -> {
             try (ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream()); ObjectInputStream in = new ObjectInputStream(socket.getInputStream())) {
@@ -94,18 +94,28 @@ public class Node {
     // Ligação a outro nó manualmente
     public void connectToNode(String host, int port) {
         new Thread(() -> {
-            try (Socket sock = new Socket(host, port); ObjectOutputStream out = new ObjectOutputStream(sock.getOutputStream()); ObjectInputStream in = new ObjectInputStream(sock.getInputStream())) {
+            try {
+                // Verificar se o nó não se liga a si mesmo
+                String localHost = InetAddress.getLocalHost().getHostAddress();
+                if ((host.equals(localHost) || host.equals("localhost")) && port == listenPort) {
+                    System.err.println("[ERRO] Não é possível ligar-se a si mesmo.");
+                    return;
+                }
 
                 System.out.printf("[INFO] A tentar ligar a %s:%d...%n", host, port);
-                String localHost = InetAddress.getLocalHost().getHostAddress();
-                out.writeObject(new NewConnectionRequest(localHost, listenPort));
-                out.flush();
+                try (Socket sock = new Socket(host, port); ObjectOutputStream out = new ObjectOutputStream(sock.getOutputStream()); ObjectInputStream in = new ObjectInputStream(sock.getInputStream())) {
 
-                Object obj = in.readObject();
-                if (obj instanceof NewConnectionRequest reply) {
-                    System.out.printf("[INFO] Ligação aceite por %s:%d%n", reply.getHost(), reply.getPort());
-                } else {
-                    System.err.println("[ERRO] Resposta inesperada: " + obj);
+                    // Envia pedido de conexão
+                    out.writeObject(new NewConnectionRequest(localHost, listenPort));
+                    out.flush();
+
+                    // Lê resposta
+                    Object obj = in.readObject();
+                    if (obj instanceof NewConnectionRequest reply) {
+                        System.out.printf("[INFO] Ligação aceite por %s:%d%n", reply.getHost(), reply.getPort());
+                    } else {
+                        System.err.println("[ERRO] Resposta inesperada: " + obj);
+                    }
                 }
             } catch (IOException | ClassNotFoundException e) {
                 System.err.println("[ERRO] Não foi possível ligar a " + host + ":" + port + " - " + e.getMessage());
