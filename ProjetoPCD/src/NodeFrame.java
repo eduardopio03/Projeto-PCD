@@ -35,6 +35,7 @@ public class NodeFrame {
         labelEndereco = new JLabel("Endereço:");
         labelPorta = new JLabel("Porta:");
         textFieldEndereco = new JTextField();
+        textFieldEndereco.setText("localhost");
         textFieldPorta = new JTextField();
         buttonCancel = new JButton("Cancelar");
         buttonOK = new JButton("OK");
