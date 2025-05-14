@@ -1,5 +1,7 @@
 
-public class FileSearchResult {
+import java.io.Serializable;
+
+public class FileSearchResult implements Serializable {
 
     private WordSearchMessage searchMessage;
     private int fileSize;

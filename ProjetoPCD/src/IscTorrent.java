@@ -2,6 +2,7 @@
 import java.awt.*;
 import java.io.File;
 import java.io.IOException;
+import java.util.List;
 import javax.swing.*;
 
 public class IscTorrent {
@@ -16,6 +17,7 @@ public class IscTorrent {
     private JPanel rightPanel;
     private JButton downloadButton;
     private JButton connectButton;
+    private DefaultListModel<String> listModel;
 
     private Node node;
 
@@ -64,7 +66,7 @@ public class IscTorrent {
         topPanel.add(searchButton);
 
         // Lista de resultados -> Apresenta os resultados da pesquisa
-        DefaultListModel<String> listModel = new DefaultListModel<>();
+        listModel = new DefaultListModel<>();
         JList<String> resultList = new JList<>(listModel);
         JScrollPane scrollPane = new JScrollPane(resultList);
 
@@ -98,7 +100,33 @@ public class IscTorrent {
     }
 
     public void searchFiles() {
-        // TO-DO
+        String keyword = textField.getText().trim();
+        if (keyword.isEmpty()) {
+            return;
+        }
+
+        // Executar pesquisa em background
+        new Thread(() -> {
+            try {
+                List<FileSearchResult> results = node.searchFiles(keyword);
+
+                // Agrupar por nome de ficheiro e contar quantos peers têm cada ficheiro
+                java.util.Map<String, Integer> fileCounts = new java.util.HashMap<>();
+                for (FileSearchResult res : results) {
+                    fileCounts.put(res.getFileName(), fileCounts.getOrDefault(res.getFileName(), 0) + 1);
+                }
+
+                SwingUtilities.invokeLater(() -> {
+                    listModel.clear();
+                    for (String fileName : fileCounts.keySet()) {
+                        int count = fileCounts.get(fileName);
+                        listModel.addElement(fileName + "<" + count + ">");
+                    }
+                });
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }).start();
     }
 
     public void downloadFiles() {
