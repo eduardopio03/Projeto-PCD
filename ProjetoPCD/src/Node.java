@@ -83,7 +83,6 @@ public class Node {
     private void handleConnection(Socket socket) {
         new Thread(() -> {
             try (ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream()); ObjectInputStream in = new ObjectInputStream(socket.getInputStream())) {
-
                 Object obj = in.readObject();
                 if (obj instanceof NewConnectionRequest req) {
                     System.out.printf("[INFO] Pedido de ligação de %s:%d%n", req.getHost(), req.getPort());
@@ -131,14 +130,11 @@ public class Node {
                     System.err.println("[ERRO] Não é possível ligar-se a si mesmo.");
                     return;
                 }
-
                 System.out.printf("[INFO] A tentar ligar a %s:%d...%n", host, port);
                 try (Socket sock = new Socket(host, port); ObjectOutputStream out = new ObjectOutputStream(sock.getOutputStream()); ObjectInputStream in = new ObjectInputStream(sock.getInputStream())) {
-
                     // Envia pedido de conexão
                     out.writeObject(new NewConnectionRequest(localHost, listenPort));
                     out.flush();
-
                     // Lê resposta
                     Object obj = in.readObject();
                     if (obj instanceof NewConnectionRequest reply) {
