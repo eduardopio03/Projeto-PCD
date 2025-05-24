@@ -41,6 +41,20 @@ public class Node {
         return workDir;
     }
 
+    public int getListenPort() {
+        return listenPort;
+    }
+
+    public boolean hasLocalFile(String fileName) {
+        // Verifica em todos os arquivos do mapa se existe algum com o nome especificado
+        for (File file : files.values()) {
+            if (file.getName().equals(fileName)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     // Lê os ficheiros da pasta e guarda no mapa
     private void readFiles() {
         File folder = new File(workDir);
@@ -85,39 +99,14 @@ public class Node {
     private void handleConnection(Socket socket) {
         new Thread(() -> {
             try (ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream()); ObjectInputStream in = new ObjectInputStream(socket.getInputStream())) {
+
                 Object obj = in.readObject();
 
-                // NewConnectionRequest
+                // Encaminhar para os métodos específicos conforme o tipo de mensagem
                 if (obj instanceof NewConnectionRequest req) {
-                    System.out.printf("[INFO] Pedido de ligação de %s:%d%n", req.getHost(), req.getPort());
-                    // Responde com os mesmos dados para confirmar
-                    String localHost = InetAddress.getLocalHost().getHostAddress();
-                    NewConnectionRequest reply = new NewConnectionRequest(localHost, listenPort);
-                    out.writeObject(reply);
-                    out.flush();
-                    addPeer(req.getHost(), req.getPort());
-                    System.out.println("[INFO] Ligação estabelecida com sucesso.");
-
-                    // WordSearchMessage    
+                    handleNewConnection(req, out);
                 } else if (obj instanceof WordSearchMessage wsm) {
-                    // Pesquisa ficheiros locais e responde com a lista de resultados
-                    List<FileSearchResult> results = new ArrayList<>();
-                    for (Map.Entry<BigInteger, File> entry : files.entrySet()) {
-                        File f = entry.getValue();
-                        if (f.getName().contains(wsm.getSearchWord())) {
-                            results.add(new FileSearchResult(
-                                    wsm,
-                                    (int) f.length(),
-                                    f.getName(),
-                                    listenPort,
-                                    InetAddress.getLocalHost().getHostAddress()));
-                            System.out.println(f.getName());
-                            System.out.println(f.length());
-                        }
-                    }
-                    out.writeObject(results);
-                    out.flush();
-                    System.out.println("[INFO] Pesquisa recebida e respondida.");
+                    handleWordSearch(wsm, out);
                 } else if (obj instanceof FileBlockRequestMessage blockRequest) {
                     handleBlockRequest(blockRequest, out);
                 } else {
@@ -127,6 +116,38 @@ public class Node {
                 System.err.println("[ERRO] Erro no handshake: " + e.getMessage());
             }
         }).start();
+    }
+
+    // Método específico para lidar com pedido de nova conexão
+    private void handleNewConnection(NewConnectionRequest req, ObjectOutputStream out) throws IOException {
+        System.out.printf("[INFO] Pedido de ligação de %s:%d%n", req.getHost(), req.getPort());
+        // Responde com os mesmos dados para confirmar
+        String localHost = InetAddress.getLocalHost().getHostAddress();
+        NewConnectionRequest reply = new NewConnectionRequest(localHost, listenPort);
+        out.writeObject(reply);
+        out.flush();
+        addPeer(req.getHost(), req.getPort());
+        System.out.println("[INFO] Ligação estabelecida com sucesso.");
+    }
+
+    // Método específico para lidar com pedido de pesquisa
+    private void handleWordSearch(WordSearchMessage wsm, ObjectOutputStream out) throws IOException {
+        // Pesquisa ficheiros locais e responde com a lista de resultados
+        List<FileSearchResult> results = new ArrayList<>();
+        for (Map.Entry<BigInteger, File> entry : files.entrySet()) {
+            File f = entry.getValue();
+            if (f.getName().contains(wsm.getSearchWord())) {
+                results.add(new FileSearchResult(
+                        wsm,
+                        (int) f.length(),
+                        f.getName(),
+                        listenPort,
+                        InetAddress.getLocalHost().getHostAddress()));
+            }
+        }
+        out.writeObject(results);
+        out.flush();
+        System.out.println("[INFO] Pesquisa recebida e respondida.");
     }
 
     private void handleBlockRequest(FileBlockRequestMessage request, ObjectOutputStream out) throws IOException {

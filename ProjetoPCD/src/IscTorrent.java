@@ -44,7 +44,7 @@ public class IscTorrent {
         System.out.println("[INFO] Diretório definido como: " + absoluteWorkDir);
 
         this.node = new Node(absoluteWorkDir, port);
-        frame = new JFrame("Aplicação de Pesquisa ");
+        frame = new JFrame("Aplicação de Pesquisa: " + node.getListenPort());
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         frame.setSize(600, 300);
         frame.setLocationRelativeTo(null);
@@ -72,6 +72,8 @@ public class IscTorrent {
         // Lista de resultados -> Apresenta os resultados da pesquisa
         listModel = new DefaultListModel<>();
         JList<String> resultList = new JList<>(listModel);
+        // Seleção multipla
+        resultList.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
         JScrollPane scrollPane = new JScrollPane(resultList);
 
         // Painel lateral direito -> Contem os botões "Descarregar" e "Ligar nó"
@@ -112,11 +114,24 @@ public class IscTorrent {
         // Executar pesquisa em background
         new Thread(() -> {
             try {
-                List<FileSearchResult> results = node.searchFiles(keyword);
-                lastSearchResults = results; // Guarda os resultados
+                // Obtém todos os resultados da pesquisa
+                List<FileSearchResult> allResults = node.searchFiles(keyword);
+
+                // Filtra os resultados, excluindo arquivos que já existem localmente
+                List<FileSearchResult> filteredResults = new ArrayList<>();
+                for (FileSearchResult result : allResults) {
+                    // Adiciona apenas arquivos que NÃO existem localmente
+                    if (!node.hasLocalFile(result.getFileName())) {
+                        filteredResults.add(result);
+                    }
+                }
+
+                // Guarda apenas os resultados filtrados
+                lastSearchResults = filteredResults;
+
                 // Agrupar por nome de ficheiro e contar quantos peers têm cada ficheiro
                 java.util.Map<String, Integer> fileCounts = new java.util.HashMap<>();
-                for (FileSearchResult res : results) {
+                for (FileSearchResult res : filteredResults) {
                     fileCounts.put(res.getFileName(), fileCounts.getOrDefault(res.getFileName(), 0) + 1);
                 }
 
@@ -135,37 +150,46 @@ public class IscTorrent {
 
     public void downloadFiles() {
         JList<String> resultList = (JList<String>) ((JScrollPane) bottomPanel.getComponent(0)).getViewport().getView();
-        int selectedIndex = resultList.getSelectedIndex();
-        if (selectedIndex == -1) {
-            JOptionPane.showMessageDialog(frame, "Selecione um arquivo para download", "Aviso", JOptionPane.WARNING_MESSAGE);
+        int[] selectedIndices = resultList.getSelectedIndices();
+
+        if (selectedIndices.length == 0) {
+            JOptionPane.showMessageDialog(frame, "Selecione pelo menos um arquivo para download",
+                    "Aviso", JOptionPane.WARNING_MESSAGE);
             return;
         }
 
-        String selectedItem = listModel.getElementAt(selectedIndex);
-        // Remove o <numero> do final
-        String fileName = selectedItem.substring(0, selectedItem.lastIndexOf('<')).trim();
+        // Para cada índice selecionado
+        for (int selectedIndex : selectedIndices) {
+            String selectedItem = listModel.getElementAt(selectedIndex);
+            // Remove o <numero> do final
+            String fileName = selectedItem.substring(0, selectedItem.lastIndexOf('<')).trim();
 
-        // Procura por todos os peers que têm o arquivo
-        List<FileSearchResult> sources = new ArrayList<>();
-        for (FileSearchResult result : lastSearchResults) {
-            if (result.getFileName().equals(fileName)) {
-                sources.add(result);
+            // Procura por todos os peers que têm o arquivo
+            List<FileSearchResult> sources = new ArrayList<>();
+            for (FileSearchResult result : lastSearchResults) {
+                if (result.getFileName().equals(fileName)) {
+                    sources.add(result);
+                }
             }
+
+            if (sources.isEmpty()) {
+                JOptionPane.showMessageDialog(frame,
+                        "Nenhuma fonte disponível para o arquivo: " + fileName,
+                        "Aviso", JOptionPane.WARNING_MESSAGE);
+                continue; // Pula para o próximo arquivo
+            }
+
+            // Usa o tamanho do primeiro resultado encontrado 
+            long fileSize = sources.get(0).getFileSize();
+
+            // Inicia o download em thread separada
+            final String finalFileName = fileName;
+            new Thread(() -> {
+                System.out.println("[INFO] Iniciando download de " + finalFileName);
+                DownloadTaskManager downloadManager = new DownloadTaskManager(node.getWorkDir(), node);
+                downloadManager.startDownload(finalFileName, fileSize, sources);
+            }).start();
         }
-
-        if (sources.isEmpty()) {
-            JOptionPane.showMessageDialog(frame, "Nenhuma fonte disponível para este arquivo", "Erro", JOptionPane.ERROR_MESSAGE);
-            return;
-        }
-
-        // Usa o tamanho do primeiro resultado encontrado 
-        long fileSize = sources.get(0).getFileSize();
-
-        // Inicia o download
-        new Thread(() -> {
-            DownloadTaskManager downloadManager = new DownloadTaskManager(node.getWorkDir(), node);
-            downloadManager.startDownload(fileName, fileSize, sources);
-        }).start();
     }
 
     public static void main(String[] args) {

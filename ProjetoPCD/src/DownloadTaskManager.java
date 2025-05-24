@@ -10,7 +10,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 public class DownloadTaskManager {
 
@@ -22,8 +24,13 @@ public class DownloadTaskManager {
     private String workDir;
     private long startTime;
     private Map<String, Integer> peersBlockCount;
-    private CountDownLatch downloadComplete;
     private boolean downloading = false;
+
+    // Cadeado e variáveis condicionais para coordenação
+    private final Lock lock = new ReentrantLock();
+    private final Condition downloadCompleteCondition = lock.newCondition();
+    private int totalBlocks = 0;
+    private int completedBlocks = 0;
 
     private Node node;
 
@@ -35,56 +42,70 @@ public class DownloadTaskManager {
         this.node = node;
     }
 
-    public synchronized void startDownload(String fileName, long fileSize, List<FileSearchResult> sources) {
-        if (downloading) {
-            System.err.println("[ERRO] Já existe um download em andamento");
+    public void startDownload(String fileName, long fileSize, List<FileSearchResult> sources) {
+        lock.lock();
+        try {
+            if (downloading) {
+                System.err.println("[ERRO] Já existe um download em andamento");
+                return;
+            }
+
+            this.fileName = fileName;
+            this.fileSize = fileSize;
+            this.startTime = System.currentTimeMillis();
+            this.downloading = true;
+
+            // Inicializa a contagem de blocos por peer
+            for (FileSearchResult source : sources) {
+                String peerKey = source.getHostName() + ":" + source.getOriginPort();
+                peersBlockCount.put(peerKey, 0);
+            }
+
+            // Cria a lista dos blocos
+            createBlockRequests(fileName, fileSize);
+
+            // Define o total de blocos a serem baixados
+            totalBlocks = pendingBlocks.size();
+            completedBlocks = 0;
+
+            // Inicia as threads para download de cada peer
+            for (FileSearchResult source : sources) {
+                new Thread(() -> downloadFromPeer(source)).start();
+            }
+
+            // Cria thread para escrever o arquivo quando completo
+            new Thread(this::waitAndWrite).start();
+        } finally {
+            lock.unlock();
         }
-
-        this.fileName = fileName;
-        this.fileSize = fileSize;
-        this.startTime = System.currentTimeMillis();
-        this.downloading = true;
-
-        // Inicializa a contagem de blocos por peer
-        for (FileSearchResult source : sources) {
-            String peerKey = source.getHostName() + ":" + source.getOriginPort();
-            peersBlockCount.put(peerKey, 0);
-        }
-
-        // Cria a lista dos blocos
-        createBlockRequests(fileName, fileSize);
-
-        // Cria o CountDownLatch
-        downloadComplete = new CountDownLatch(pendingBlocks.size());
-
-        //Inicia as threads para download de cada peer
-        for (FileSearchResult source : sources) {
-            new Thread(() -> downloadFromPeer(source)).start();
-        }
-
-        // Cria thread para escrever o arquivo quando completo
-        new Thread(this::waitAndWrite).start();
     }
 
     private void waitAndWrite() {
+        lock.lock();
         try {
             // Aguarda até que todos os blocos sejam transferidos
-            downloadComplete.await();
+            while (completedBlocks < totalBlocks) {
+                try {
+                    downloadCompleteCondition.await();
+                } catch (InterruptedException e) {
+                    System.err.println("[ERRO] Thread de escrita interrompida: " + e.getMessage());
+                    return;
+                }
+            }
+
+            long elapsed = System.currentTimeMillis() - startTime;
 
             // Escreve o ficheiro no disco
             writeFileToDisk();
 
-            // Calcula o tempo de download
-            long elapsed = System.currentTimeMillis() - startTime;
-
             // Exibe as estatísticas
             showDownloadStatistics(elapsed);
 
-            //Reset do estado
+            // Reset do estado
             downloading = false;
 
-        } catch (InterruptedException e) {
-            System.err.println("[ERRO] Download interrompido: " + e.getMessage());
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -92,7 +113,6 @@ public class DownloadTaskManager {
         File file = new File(workDir, fileName);
         try (FileOutputStream fos = new FileOutputStream(file)) {
             // Escreve os blocos na ordem correta
-            int totalBlocks = downloadedBlocks.size();
             for (int i = 0; i < totalBlocks; i++) {
                 byte[] data = downloadedBlocks.get(i);
                 if (data != null) {
@@ -132,34 +152,52 @@ public class DownloadTaskManager {
 
         try {
             while (true) {
-                // Pega no proximo bloco para downloado, de forma sincronizada
+                // Pega no proximo bloco para download, de forma sincronizada
                 FileBlockRequestMessage block;
-                synchronized (pendingBlocks) {
+
+                lock.lock();
+                try {
                     if (pendingBlocks.isEmpty()) {
                         break; // Sem mais blocos para download
                     }
                     block = pendingBlocks.remove(0);
+                } finally {
+                    lock.unlock();
                 }
 
                 try {
                     // Pede o bloco ao peer
                     byte[] data = requestBlockFromPeer(source, block);
 
-                    // Armazena o bloco
-                    int blockIndex = (int) (block.getOffset() / BLOCK_SIZE);
-                    downloadedBlocks.put(blockIndex, data);
+                    // Armazena o bloco e atualiza contadores
+                    lock.lock();
+                    try {
+                        int blockIndex = (int) (block.getOffset() / BLOCK_SIZE);
+                        downloadedBlocks.put(blockIndex, data);
 
-                    // Atualiza a contagem deste peer
-                    peersBlockCount.put(peerKey, peersBlockCount.get(peerKey) + 1);
+                        // Atualiza a contagem deste peer
+                        peersBlockCount.put(peerKey, peersBlockCount.get(peerKey) + 1);
 
-                    // Marca um bloco como concluído
-                    downloadComplete.countDown();
+                        // Marca um bloco como concluído
+                        completedBlocks++;
+
+                        // Se todos os blocos foram baixados, sinaliza a condição
+                        if (completedBlocks >= totalBlocks) {
+                            downloadCompleteCondition.signal();
+                        }
+                    } finally {
+                        lock.unlock();
+                    }
+
                 } catch (IOException | ClassNotFoundException e) {
                     System.err.println("[ERRO] Falha ao baixar bloco de " + peerKey + ": " + e.getMessage());
 
                     // Devolve o bloco à lista para ser tentado por outro peer
-                    synchronized (pendingBlocks) {
+                    lock.lock();
+                    try {
                         pendingBlocks.add(block);
+                    } finally {
+                        lock.unlock();
                     }
 
                     break;
@@ -188,21 +226,36 @@ public class DownloadTaskManager {
     }
 
     public void createBlockRequests(String fileName, long fileSize) {
-        pendingBlocks.clear();
-        long offset = 0;
+        lock.lock();
+        try {
+            pendingBlocks.clear();
+            long offset = 0;
 
-        while (offset < fileSize) {
-            int length = (int) Math.min(BLOCK_SIZE, fileSize - offset);
-            pendingBlocks.add(new FileBlockRequestMessage(fileName, offset, length));
-            offset += length;
+            while (offset < fileSize) {
+                int length = (int) Math.min(BLOCK_SIZE, fileSize - offset);
+                pendingBlocks.add(new FileBlockRequestMessage(fileName, offset, length));
+                offset += length;
+            }
+        } finally {
+            lock.unlock();
         }
     }
 
-    public List<FileBlockRequestMessage> getBlockRequest() {
-        return pendingBlocks;
+    public List<FileBlockRequestMessage> getBlockRequests() {
+        lock.lock();
+        try {
+            return new ArrayList<>(pendingBlocks);
+        } finally {
+            lock.unlock();
+        }
     }
 
     public boolean isDownloading() {
-        return downloading;
+        lock.lock();
+        try {
+            return downloading;
+        } finally {
+            lock.unlock();
+        }
     }
 }
