@@ -46,7 +46,7 @@ public class DownloadTaskManager {
         lock.lock();
         try {
             if (downloading) {
-                System.err.println("[ERRO] Já existe um download em andamento");
+                System.err.println("[ERRO] Já existe um download a decorrer");
                 return;
             }
 
@@ -127,20 +127,7 @@ public class DownloadTaskManager {
     }
 
     private void showDownloadStatistics(long elapsed) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("Download completo!\n");
-        sb.append("Arquivo: ").append(fileName).append("\n");
-        sb.append("Tamanho: ").append(fileSize).append(" bytes\n");
-        sb.append("Tempo: ").append(elapsed / 1000.0).append(" segundos\n\n");
-        sb.append("Blocos por peer:\n");
-
-        for (Map.Entry<String, Integer> entry : peersBlockCount.entrySet()) {
-            sb.append(entry.getKey()).append(": ").append(entry.getValue()).append(" blocos\n");
-        }
-
-        System.out.println(sb.toString());
-
-        // Mostra a janela de estatísticas na GUI
+        // Apenas cria e chama o frame, sem lógica de formatação
         javax.swing.SwingUtilities.invokeLater(() -> {
             DownloadStatsFrame statsFrame = new DownloadStatsFrame(fileName, fileSize, elapsed, peersBlockCount);
             statsFrame.show();
@@ -158,7 +145,7 @@ public class DownloadTaskManager {
                 lock.lock();
                 try {
                     if (pendingBlocks.isEmpty()) {
-                        break; // Sem mais blocos para download
+                        break; // Nao ha mais blocos
                     }
                     block = pendingBlocks.remove(0);
                 } finally {
@@ -181,7 +168,7 @@ public class DownloadTaskManager {
                         // Marca um bloco como concluído
                         completedBlocks++;
 
-                        // Se todos os blocos foram baixados, sinaliza a condição
+                        // Se todos os blocos foram transferidos, sinaliza a condição
                         if (completedBlocks >= totalBlocks) {
                             downloadCompleteCondition.signal();
                         }

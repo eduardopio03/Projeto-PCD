@@ -7,7 +7,18 @@ public class DownloadStatsFrame {
 
     private JFrame frame;
 
+    private String fileName;
+    private long fileSize;
+    private long elapsedTime;
+    private Map<String, Integer> peersBlockCounts;
+
     public DownloadStatsFrame(String fileName, long fileSize, long elapsedTime, Map<String, Integer> peersBlockCounts) {
+
+        this.fileName = fileName;
+        this.fileSize = fileSize;
+        this.elapsedTime = elapsedTime;
+        this.peersBlockCounts = peersBlockCounts;
+
         frame = new JFrame("Download Concluído");
         frame.setSize(400, 300);
         frame.setLocationRelativeTo(null);
@@ -39,7 +50,7 @@ public class DownloadStatsFrame {
             peersPanel.add(new JLabel(entry.getValue() + " blocos"));
         }
 
-        // Adiciona o painel de peers em um ScrollPane
+        // Adiciona o painel de peers a um ScrollPane
         JScrollPane scrollPane = new JScrollPane(peersPanel);
         scrollPane.setPreferredSize(new Dimension(350, 150));
         panel.add(scrollPane);
@@ -59,5 +70,21 @@ public class DownloadStatsFrame {
 
     public void show() {
         frame.setVisible(true);
+    }
+
+    // Adicionar método para obter string de estatísticas
+    public String getStatsString() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Download completo!\n");
+        sb.append("Arquivo: ").append(fileName).append("\n");
+        sb.append("Tamanho: ").append(fileSize).append(" bytes\n");
+        sb.append("Tempo: ").append(elapsedTime / 1000.0).append(" segundos\n\n");
+        sb.append("Blocos por peer:\n");
+
+        for (Map.Entry<String, Integer> entry : peersBlockCounts.entrySet()) {
+            sb.append(entry.getKey()).append(": ").append(entry.getValue()).append(" blocos\n");
+        }
+
+        return sb.toString();
     }
 }
