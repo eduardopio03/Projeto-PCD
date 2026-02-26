@@ -1,4 +1,4 @@
-# ISCTorrent (Peer‑to‑Peer File Search & Download)
+# IscTorrent (Peer‑to‑Peer File Search & Download)
 
 A simple peer‑to‑peer (P2P) file search and download application with a Swing GUI. Each node indexes files in a working directory, listens on a TCP port, connects to peers, searches by keyword, and downloads files in blocks from multiple sources concurrently.
 
